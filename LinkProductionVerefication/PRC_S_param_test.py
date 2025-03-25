@@ -196,7 +196,7 @@ def main():
     res = True
     PASSIVITY_TOL = 1e-6
 
-    parser = argparse.ArgumentParser(description="Process a file with a debug mode option.")
+    parser = argparse.ArgumentParser(description="Test S parameter passivity, reciprocity & causality.")
     
     # Adding arguments for file path and debug mode
     parser.add_argument('file', type=str, help="The full path to the file to process.")

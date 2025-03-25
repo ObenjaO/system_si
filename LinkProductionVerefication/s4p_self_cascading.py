@@ -88,22 +88,32 @@ def main():
     parser = argparse.ArgumentParser(description="Test S parameter passivity, reciprocity & causality.")
     
     # Adding arguments for file path and debug mode
-    parser.add_argument('Sfile1_name', type=str, help="The full path to the first S-parameter file.")
-    parser.add_argument('Sfile2_name', type=str, help="The full path to the first S-parameter file.")
+    parser.add_argument('Sfile1_name', type=str, help="The full path to the S-parameter file.")
+    parser.add_argument('repeat_number', type=int, help="The number of time to cascade.")
     parser.add_argument('Scascade_name', type=str, help="The name for the cascade S-params.")
     parser.add_argument('debug', type=bool, help="Enable or disable debug mode (True/False).")
     
     # Parsing the command-line arguments
     args = parser.parse_args()
-    file1_name = sys.argv[1]
-    file2_name = sys.argv[2]
-    cascade_name = sys.argv[3]
-    debug_mode = sys.argv[4]
-        
+    file1_name = args.Sfile1_name  # This remains correct
+    repeat_number = args.repeat_number  # This is now an integer
+    cascade_name = args.Scascade_name 
+    debug_mode = args.debug
+    
+    
+    
     try:
+        if repeat_number < 1:
+            raise ValueError("Number of cascades must be greater than 0!")
         # Cascade the networks
-        ntwk1, ntwk2, cascaded = cascade_s2p_or_s4p(file1_name, file2_name, output_name=cascade_name)
+        ntwk1, ntwk2, cascaded = cascade_s2p_or_s4p(file1_name, file1_name, output_name=cascade_name)
         # Read the third SnP file for comparison
+        suffix = ".s4p"
+        if ntwk1.nports == 2:
+            suffix = ".s2p"
+        for i in range(repeat_number-1):
+            ntwk1, ntwk2, cascaded = cascade_s2p_or_s4p(file1_name, cascade_name + suffix, output_name=cascade_name)
+            print("Cascading loop {} completed successfully!".format(i+1))
         
         # Plot parameters
         if (debug_mode):
