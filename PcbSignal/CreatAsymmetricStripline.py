@@ -198,7 +198,7 @@ def run_calculation():
             trace_width, trace_thickness, dielectric_thickness_1, dielectric_thickness_2, spacing, dielectric_constant
         )
         
-        frequencies = np.linspace(10e6, 60e9, 5999)
+        frequencies = np.linspace(0, 60e9, 6000)
         gamma, alpha_dB_per_inch, beta_per_inch = calculate_propagation_constant(
             frequencies, effective_dielectric_constant, loss_tangent, trace_width, trace_thickness, CONDUCTIVITY, Z0
         )
@@ -206,7 +206,7 @@ def run_calculation():
         trace_network = rf.Network()
         trace_network.frequency = rf.Frequency.from_f(frequencies, unit='Hz')
         trace_network.s = np.zeros((len(frequencies), 2, 2), dtype=complex)
-        
+        print(f"Characteristic Impedance (Z0): {Z0:.2f} ohms\n")
         for i, f in enumerate(frequencies):
             A = np.cosh(gamma[i] * trace_length)
             B = Z0 * np.sinh(gamma[i] * trace_length)
@@ -268,8 +268,8 @@ def run_calculation():
         for freq, loss in zip(["1 GHz", "4 GHz", "8 GHz", "13.28125 GHz", "16 GHz", "26.5625 GHz"], insertion_loss_diff):
             result_text_diff.insert(tk.END, f"{freq}: {loss:.2f} dB\n")
         
-
-        trace_network.write_touchstone("asymmetric_stripline_with_losses.s2p")
+        print("trace_network.write_touchstone\n")
+        trace_network.write_touchstone("Asymmetric_stripline_with_losses.s2p")
         trace_network_diff.write_touchstone("asymmetric_differential_stripline_with_losses.s4p")
         plot_impedance_sensitivity(trace_width, trace_thickness, dielectric_thickness_1, dielectric_thickness_2, dielectric_constant, plot_frame)
         # Plot differential impedance sensitivity

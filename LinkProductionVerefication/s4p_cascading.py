@@ -5,7 +5,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import sys
+from s4p_self_cascading import cascade_s2p_or_s4p, plot_parameters,to_db, mixed_mode_s_params
 
+'''
 def cascade_s2p_or_s4p(file1_name, file2_name, output_name='cascaded'):
     file1_path = os.path.join(os.getcwd(), file1_name)
     file2_path = os.path.join(os.getcwd(), file2_name)
@@ -83,6 +85,7 @@ def plot_parameters(ntwk1, ntwk2, cascaded):
         
     plt.tight_layout()
 
+'''
 def main():
 
     parser = argparse.ArgumentParser(description="Test S parameter passivity, reciprocity & causality.")

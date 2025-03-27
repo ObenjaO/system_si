@@ -1,0 +1,7 @@
+# Ignore all `.log` files
+*.log
+
+# Ignore all `.snp` files
+*.s2p
+*.s4p
+

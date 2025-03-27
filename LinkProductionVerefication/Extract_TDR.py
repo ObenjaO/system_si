@@ -9,6 +9,7 @@ import numpy as np
 from scipy.stats import linregress
 import os
 import sys
+from s4p_self_cascading import to_db, mixed_mode_s_params
 
 def analyze_and_adjust_tdr(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
     """Analyze and adjust TDR in steps, updating Z_t after each valid segment."""
@@ -164,14 +165,28 @@ def main():
     fig, (ax1, ax2,ax3) = plt.subplots(3, 1, figsize=(10, 12))
     for file in args.files:
         print(f"Processing file: {file}")
-        ntwk = rf.Network(file)
-        time, s_t = ntwk.s11.step_response(window='hamming')
-        Z_t = Z0 * (1 + s_t) / (1 - s_t)
+        S_ntwk = rf.Network(file)
+        if S_ntwk.nports == 4:
+            factor = 2
+            ntwk_dict = mixed_mode_s_params(S_ntwk.s)
+            # Convert a specific parameter (e.g., sdd11) into an skrf.Network object
+            freqs = S_ntwk.f  # Extract frequency array
+            sdd11_ntwk = rf.Network(f=freqs, s=ntwk_dict['sdd11'][:, np.newaxis, np.newaxis])
+            sdd12_ntwk = rf.Network(f=freqs, s=ntwk_dict['sdd21'][:, np.newaxis, np.newaxis])
+            # Compute step response
+            time, s_t = sdd11_ntwk.step_response(window='hamming')
+            time1, I_t = sdd11_ntwk.impulse_response(window='hamming')
+            time, step_t = sdd12_ntwk.step_response(window='hamming')
+        else:
+            factor = 1
+            ntwk = S_ntwk
+            time, s_t = ntwk.s11.step_response(window='hamming')
+            time1, I_t = ntwk.s11.impulse_response(window='hamming')
+            time, step_t = ntwk.s12.step_response(window='hamming')
+        Z_t = factor * Z0 * (1 + s_t) / (1 - s_t)
         ax2.plot(time, Z_t, label=file)  # Add label for legend
-        time, I_t = ntwk.s11.impulse_response(window='hamming')
-        ax1.plot(time, I_t, label=file)  # Add label for legend
-        time, s_t = ntwk.s12.step_response(window='hamming')
-        ax3.plot(time, s_t, label=file)  # Add label for legend
+        ax1.plot(time1, I_t, label=file)  # Add label for legend
+        ax3.plot(time, step_t, label=file)  # Add label for legend
         
     # Beautify plot
     ax3.set_title('Step transfer', fontsize=14, fontweight='bold')
@@ -199,17 +214,27 @@ def main():
 
     for file in args.files:
         print(f"Processing file: {file}")
-        ntwk = rf.Network(file)
-        time, s_t = ntwk.s11.step_response(window='hamming')
-        Z_t = Z0 * (1 + s_t) / (1 - s_t)
+        S_ntwk = rf.Network(file)
+        if S_ntwk.nports == 4:
+            factor = 2
+            ntwk_dict = mixed_mode_s_params(S_ntwk.s)
+            # Convert a specific parameter (e.g., sdd11) into an skrf.Network object
+            freqs = S_ntwk.f  # Extract frequency array
+            sdd11_ntwk = rf.Network(f=freqs, s=ntwk_dict['sdd11'][:, np.newaxis, np.newaxis])
+            # Compute step response
+            time, s_t = sdd11_ntwk.step_response(window='hamming')
+            
+        else:
+            factor = 1
+            ntwk = S_ntwk
+            time, s_t = ntwk.s11.step_response(window='hamming')
+        Z_t = factor * Z0 * (1 + s_t) / (1 - s_t)
         ax4.plot(time, Z_t, label=file)  # Add label for legend
-        
         # Step 1 & 2: Loop through and adjust Z_t for each valid segment
         Z_t_adjusted = analyze_and_adjust_tdr(time, Z_t)
         ax4.plot(time, Z_t_adjusted, label=f"{file} (Adjusted step1&2)", linestyle="--")
         # Step 1: Identify valid segments
         valid_segments = analyze_tdr_segments(time, Z_t)
-
         # Step 2 & 3: Adjust TDR for each valid segment
         for Tstart, Tend, slope, r_squared in valid_segments:
             Z_t = adjust_tdr(time, Z_t, Tstart, Tend, slope)
