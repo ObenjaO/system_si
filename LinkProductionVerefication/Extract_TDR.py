@@ -11,6 +11,133 @@ import os
 import sys
 from s4p_self_cascading import to_db, mixed_mode_s_params
 
+import numpy as np
+import scipy.stats as stats
+import skrf as rf
+import matplotlib.pyplot as plt
+
+
+def add_dc_frequency_if_missing(ntwk):
+    """
+    Check if the DC frequency is missing from the S-parameters and add it by extrapolating the first 5 frequencies
+    for all ports (e.g., S11, S21, S12, S22 for a 2-port network).
+
+    Parameters:
+    ntwk : skrf.Network
+        The network object containing S-parameters.
+
+    Returns:
+    skrf.Network
+        A new network object with the added DC frequency, if necessary.
+    """
+    # Extract the frequency and S-parameters from the network
+    f = ntwk.f
+    s_params = ntwk.s
+
+    # Check if DC frequency (0 Hz) is already present in the frequency array
+    if 0 not in f:
+        # Number of ports
+        n_ports = s_params.shape[1]
+        n_freqs = f.size
+
+        # Initialize array for new S-parameters (with DC added)
+        new_s_params = np.zeros((n_freqs + 1, n_ports, n_ports), dtype=complex)
+
+        # Copy existing S-parameters to the new array (starting at index 1)
+        new_s_params[1:, :, :] = s_params
+
+        # Extrapolate DC value for each S-parameter (Sij)
+        for i in range(n_ports):  # Input port
+            for j in range(n_ports):  # Output port
+                # Select the first 5 frequency points and corresponding S-parameters
+                first_5_freq = f[:5]
+                first_5_s = s_params[:5, i, j]
+
+                # Perform linear regression separately on real and imaginary parts
+                slope_real, intercept_real, _, _, _ = stats.linregress(first_5_freq, first_5_s.real)
+                slope_imag, intercept_imag, _, _, _ = stats.linregress(first_5_freq, first_5_s.imag)
+
+                # Extrapolate to DC (frequency = 0)
+                dc_value = intercept_real + 1j * intercept_imag
+
+                # Assign the extrapolated DC value
+                new_s_params[0, i, j] = dc_value
+
+        # Create new frequency array with DC (0 Hz) at the front
+        new_frequencies = np.insert(f, 0, 0)
+
+        # Create and return a new network
+        new_ntwk = rf.Network(f=new_frequencies, s=new_s_params)
+        return new_ntwk
+    else:
+        # If DC frequency is already present, return the original network
+        print("DC frequency already present, no need to add.")
+        return ntwk
+
+'''
+def add_dc_frequency_if_missing(ntwk):
+    """
+    Check if the DC frequency is missing from the S-parameters and add it by extrapolating the first 5 frequencies
+    for all ports (e.g., S11, S21, S12, S22 for a 2-port network).
+
+    Parameters:
+    ntwk : skrf.Network
+        The network object containing S-parameters.
+    freq_start : float
+        The starting frequency (Hz) of the frequency range.
+    freq_step : float
+        The step between frequency points (Hz).
+
+    Returns:
+    skrf.Network
+        A new network object with the added DC frequency, if necessary.
+    """
+    # Extract the frequency and S-parameters from the network
+    f = ntwk.f
+    s_params = ntwk.s
+
+    # Check if DC frequency (0 Hz) is already present in the frequency array
+    if 0 not in f:
+        # If DC frequency is missing, we proceed with the extrapolation
+
+        # Create a new list to hold the extrapolated S-parameters with DC
+        new_s_params = []
+       
+        # Iterate over all ports and extrapolate the DC frequency for each S-parameter
+        # Iterate over all ports and extrapolate the DC frequency for each S-parameter
+        for port_index in range(s_params.shape[1]):  # Iterate over all ports
+            port_s_params = []
+            for param_index in range(s_params.shape[2]):  # Iterate over all S-parameters (Sij)
+                # Select the first 5 frequency points and corresponding S-parameters for the current port and parameter
+                first_5_freq = f[:5]
+                first_5_s_params = s_params[:5, port_index, param_index]
+
+                # Perform linear regression to extrapolate back to DC (frequency = 0)
+                slope, intercept, _, _, _ = stats.linregress(first_5_freq, first_5_s_params)
+
+                # Extrapolate to DC (frequency = 0)
+                dc_value = intercept
+
+                # Add the DC value at the front for the current port and parameter
+                port_s_params.append([dc_value] + list(first_5_s_params) + list(s_params[5:, port_index, param_index]))
+
+            new_s_params.append(port_s_params)
+
+        # Convert the list of new S-parameters to a numpy array with the correct shape
+        new_s_params_array = np.array(new_s_params)
+
+        # Create a new frequency array including DC (0 Hz) at the front
+        new_frequencies = np.insert(f, 0, 0)
+
+        # Create a new network with the updated frequency and S-parameters
+        new_ntwk = rf.Network(f=new_frequencies, s=new_s_params_array)
+
+        return new_ntwk
+    else:
+        # If the DC frequency is already present, return the original network
+        print("DC frequency already present, no need to add.")
+        return ntwk
+'''
 def analyze_and_adjust_tdr(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
     """Analyze and adjust TDR in steps, updating Z_t after each valid segment."""
     num_points = len(time)
@@ -73,10 +200,9 @@ def analyze_tdr_segments(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
         slope, intercept, r_value, _, _ = linregress(time_segment, Z_segment)
         r_squared = r_value ** 2
 
-        if r_squared > r2_threshold:
+        if r_squared > r2_threshold and slope < 0.75E10 and slope > 0:
             valid_segments.append((Tstart, Tend, slope, r_squared))
             print(f"{Tstart:.2e} : {Tend:.2e} | {slope:.2f} Ω/s | {r_squared:.4f}")
-
         # Move the start index to the next Tend for the next iteration
         idx_start = idx_end
     
@@ -118,8 +244,12 @@ def adjust_tdr(time, Z_t, Tstart, Tend, slope):
     # Apply slope correction within the segment
     Z_t_adj[idx_start:idx_end] -= (time[idx_start:idx_end] - Tstart) * slope
 
+    param = np.log(2*Z_t[idx_start]/(Z_t[idx_start]+Z_t[idx_end]))
+    param = param/1.5e8
+    param = -param/((Tend - Tstart))
+    param = 0
     # Modify the remaining part of the signal
-    Z_t_adj[idx_end:] -= (Tend - Tstart) * slope
+    Z_t_adj[idx_end:] -= (Tend - Tstart) * slope/(1 - param)
 
     return Z_t_adj
 
@@ -166,6 +296,7 @@ def main():
     for file in args.files:
         print(f"Processing file: {file}")
         S_ntwk = rf.Network(file)
+        S_ntwk = add_dc_frequency_if_missing(S_ntwk)
         if S_ntwk.nports == 4:
             factor = 2
             ntwk_dict = mixed_mode_s_params(S_ntwk.s)
@@ -215,6 +346,7 @@ def main():
     for file in args.files:
         print(f"Processing file: {file}")
         S_ntwk = rf.Network(file)
+        S_ntwk = add_dc_frequency_if_missing(S_ntwk)
         if S_ntwk.nports == 4:
             factor = 2
             ntwk_dict = mixed_mode_s_params(S_ntwk.s)
@@ -231,8 +363,8 @@ def main():
         Z_t = factor * Z0 * (1 + s_t) / (1 - s_t)
         ax4.plot(time, Z_t, label=file)  # Add label for legend
         # Step 1 & 2: Loop through and adjust Z_t for each valid segment
-        Z_t_adjusted = analyze_and_adjust_tdr(time, Z_t)
-        ax4.plot(time, Z_t_adjusted, label=f"{file} (Adjusted step1&2)", linestyle="--")
+        #Z_t_adjusted = analyze_and_adjust_tdr(time, Z_t)
+        #ax4.plot(time, Z_t_adjusted, label=f"{file} (Adjusted step1&2)", linestyle="--")
         # Step 1: Identify valid segments
         valid_segments = analyze_tdr_segments(time, Z_t)
         # Step 2 & 3: Adjust TDR for each valid segment
@@ -245,8 +377,9 @@ def main():
 
     # Beautify plot
     ax4.set_title('TDR Impedance - Modify S-parameters at DC', fontsize=14, fontweight='bold')
-    ax4.set_xlabel('Time (s)', fontsize=12)
-    ax4.set_ylabel('Impedance (Ω)', fontsize=12)
+    ax4.set_xlabel('Time (s)', fontsize=16)
+    ax4.set_ylabel('Impedance (Ω)', fontsize=16)
+    ax4.tick_params(axis='both', labelsize=14) 
     ax4.grid(True, linestyle='--', alpha=0.7)  # Add grid
     ax4.legend(fontsize=10)  # Add legend
     plt.tight_layout()  # Adjust layout for better spacing

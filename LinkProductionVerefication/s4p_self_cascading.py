@@ -14,22 +14,30 @@ def mixed_mode_s_params(s):
     # Differential (dd)
     sdd11 = (s[:, 0, 0] - s[:, 0, 1] - s[:, 1, 0] + s[:, 1, 1]) / 2
     sdd21 = (s[:, 2, 0] - s[:, 2, 1] - s[:, 3, 0] + s[:, 3, 1]) / 2
+    sdd12 = (s[:, 0, 2] - s[:, 0, 3] - s[:, 1, 2] + s[:, 1, 3]) / 2
+    sdd22 = (s[:, 2, 2] - s[:, 2, 3] - s[:, 3, 2] + s[:, 3, 3]) / 2
     
     # Common-mode (cc)
     scc11 = (s[:, 0, 0] + s[:, 0, 1] + s[:, 1, 0] + s[:, 1, 1]) / 2
     scc21 = (s[:, 2, 0] + s[:, 2, 1] + s[:, 3, 0] + s[:, 3, 1]) / 2
+    scc12 = (s[:, 0, 2] + s[:, 0, 3] + s[:, 1, 2] + s[:, 1, 3]) / 2
+    scc22 = (s[:, 2, 2] + s[:, 2, 3] + s[:, 3, 2] + s[:, 3, 3]) / 2
     
     # Mode conversion (cd/dc)
     sdc11 = (s[:, 0, 0] - s[:, 0, 1] + s[:, 1, 0] - s[:, 1, 1]) / 2  # Common → Differential reflect
     scd11 = (s[:, 0, 0] + s[:, 0, 1] - s[:, 1, 0] - s[:, 1, 1]) / 2  # Differential → Common reflect
     sdc21 = (s[:, 2, 0] - s[:, 2, 1] + s[:, 3, 0] - s[:, 3, 1]) / 2  # Common → Differential transmit
     scd21 = (s[:, 2, 0] + s[:, 2, 1] - s[:, 3, 0] - s[:, 3, 1]) / 2  # Differential → Common transmit
-    
+    sdc12 = (s[:, 0, 2] - s[:, 0, 3] + s[:, 1, 2] - s[:, 1, 3]) / 2  # Common → Differential
+    scd12 = (s[:, 0, 2] + s[:, 0, 3] - s[:, 1, 2] - s[:, 1, 3]) / 2  # Differential → Common
+    sdc22 = (s[:, 2, 2] - s[:, 2, 3] + s[:, 3, 2] - s[:, 3, 3]) / 2  # Common → Differential
+    scd22 = (s[:, 2, 2] + s[:, 2, 3] - s[:, 3, 2] - s[:, 3, 3]) / 2  # Differential → Common
+
     return {
-        'sdd11': sdd11, 'sdd21': sdd21,
-        'scc11': scc11, 'scc21': scc21,
-        'sdc11': sdc11, 'scd11': scd11,
-        'sdc21': sdc21, 'scd21': scd21
+        'sdd11': sdd11, 'sdd21': sdd21, 'sdd12': sdd12, 'sdd22': sdd22,
+        'scc11': scc11, 'scc21': scc21, 'scc12': scc12, 'scc22': scc22,
+        'sdc11': sdc11, 'scd11': scd11, 'sdc21': sdc21, 'scd21': scd21,
+        'sdc12': sdc12, 'scd12': scd12, 'sdc22': sdc22, 'scd22': scd22
     }
 
 
