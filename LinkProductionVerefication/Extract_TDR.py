@@ -59,7 +59,7 @@ def add_dc_frequency_if_missing(ntwk):
 
                 # Extrapolate to DC (frequency = 0)
                 dc_value = intercept_real + 1j * intercept_imag
-
+                #print(f"DC frequency added to Port{i}{j} - {dc_value}")
                 # Assign the extrapolated DC value
                 new_s_params[0, i, j] = dc_value
 
@@ -73,71 +73,7 @@ def add_dc_frequency_if_missing(ntwk):
         # If DC frequency is already present, return the original network
         print("DC frequency already present, no need to add.")
         return ntwk
-
-'''
-def add_dc_frequency_if_missing(ntwk):
-    """
-    Check if the DC frequency is missing from the S-parameters and add it by extrapolating the first 5 frequencies
-    for all ports (e.g., S11, S21, S12, S22 for a 2-port network).
-
-    Parameters:
-    ntwk : skrf.Network
-        The network object containing S-parameters.
-    freq_start : float
-        The starting frequency (Hz) of the frequency range.
-    freq_step : float
-        The step between frequency points (Hz).
-
-    Returns:
-    skrf.Network
-        A new network object with the added DC frequency, if necessary.
-    """
-    # Extract the frequency and S-parameters from the network
-    f = ntwk.f
-    s_params = ntwk.s
-
-    # Check if DC frequency (0 Hz) is already present in the frequency array
-    if 0 not in f:
-        # If DC frequency is missing, we proceed with the extrapolation
-
-        # Create a new list to hold the extrapolated S-parameters with DC
-        new_s_params = []
-       
-        # Iterate over all ports and extrapolate the DC frequency for each S-parameter
-        # Iterate over all ports and extrapolate the DC frequency for each S-parameter
-        for port_index in range(s_params.shape[1]):  # Iterate over all ports
-            port_s_params = []
-            for param_index in range(s_params.shape[2]):  # Iterate over all S-parameters (Sij)
-                # Select the first 5 frequency points and corresponding S-parameters for the current port and parameter
-                first_5_freq = f[:5]
-                first_5_s_params = s_params[:5, port_index, param_index]
-
-                # Perform linear regression to extrapolate back to DC (frequency = 0)
-                slope, intercept, _, _, _ = stats.linregress(first_5_freq, first_5_s_params)
-
-                # Extrapolate to DC (frequency = 0)
-                dc_value = intercept
-
-                # Add the DC value at the front for the current port and parameter
-                port_s_params.append([dc_value] + list(first_5_s_params) + list(s_params[5:, port_index, param_index]))
-
-            new_s_params.append(port_s_params)
-
-        # Convert the list of new S-parameters to a numpy array with the correct shape
-        new_s_params_array = np.array(new_s_params)
-
-        # Create a new frequency array including DC (0 Hz) at the front
-        new_frequencies = np.insert(f, 0, 0)
-
-        # Create a new network with the updated frequency and S-parameters
-        new_ntwk = rf.Network(f=new_frequencies, s=new_s_params_array)
-
-        return new_ntwk
-    else:
-        # If the DC frequency is already present, return the original network
-        print("DC frequency already present, no need to add.")
-        return ntwk
-'''
+    
 def analyze_and_adjust_tdr(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
     """Analyze and adjust TDR in steps, updating Z_t after each valid segment."""
     num_points = len(time)
@@ -178,7 +114,7 @@ def analyze_and_adjust_tdr(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
     
     return Z_t
 
-def analyze_tdr_segments(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
+def analyze_tdr_segments(time, Z_t, segment_length=0.1E-9, r2_threshold=0.9):
     """Identify time segments where the linear fit has R² > threshold."""
     valid_segments = []
     num_points = len(time)

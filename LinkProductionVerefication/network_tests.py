@@ -281,8 +281,8 @@ def effective_return_loss(network, frequency, TH):
 # Example usage
 if __name__ == "__main__":
     # Load your network data
-    ntwk = rf.Network('.\Example_S_parameters\Diff_5in_85ohm.s4p')
-    #ntwk = rf.Network('.\Example_S_parameters\Diff_5in.s4p')
+    #ntwk = rf.Network('.\Example_S_parameters\Diff_5in_85ohm.s4p')
+    ntwk = rf.Network('.\Example_S_parameters\QSFP112_Mated_File_HCB-WT27939_MCB-WT27320_RX4.s4p')
     #ntwk = rf.Network('.\cascade_5in_85_100_90_100_85.s4p')
     
     # Define frequency range and threshold

@@ -110,29 +110,6 @@ def plot_parameters(ntwk1, ntwk2, cascaded):
         ax2.legend()
        
     else:  # 4-port, assume differential S21_dd and S11_dd
-        # Usage
-        il00 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 0]))
-        il01 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 1]))
-        il02 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 2]))
-        il03 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 3]))
-        il100 = 20 * np.log10(np.abs(ntwk2.s[:, 0, 1]))
-        il1000 = 20 * np.log10(np.abs(cascaded.s[:, 0, 1]))
-        #il13 = 20 * np.log10(np.abs(ntwk1.s[:, 1, 3]))
-        
-        fig, (ax1) = plt.subplots(1, 1, figsize=(10, 12))
-        ax1.plot(freq, il00, label='il00')
-        ax1.plot(freq, il01, label='il01')
-        ax1.plot(freq, il02, label='il02')
-        ax1.plot(freq, il03, label='il03')
-        #ax1.plot(freq, il11, label='il11')
-       # ax1.plot(freq, il12, label='il12')
-        #ax1.plot(freq, il13, label='il13')
-        ax1.set_title('Insertion Loss (S21 or S21_dd)')
-        ax1.set_xlabel('Frequency (GHz)')
-        ax1.set_ylabel('Insertion Loss (dB)')
-        ax1.grid(True)
-        ax1.legend()
-
         mm_ntwk1 = mixed_mode_s_params(ntwk1.s)
         mm_ntwk2 = mixed_mode_s_params(ntwk2.s)
         mm_cascaded = mixed_mode_s_params(cascaded.s)
