@@ -67,6 +67,34 @@ def return_loss_test(ntwk, frequency, TH):
     pass_status = pass_status1 and pass_status2
     return RL1[idx_freq_under_test], RL2[idx_freq_under_test], pass_status
 
+def diffrential2common_loss_test(ntwk, frequency, TH):
+    """
+    Measure insertion loss of a network at a specific frequency and threshold.
+    
+    Parameters:
+        network (object): Network component/device under test
+        frequency (float): Test frequency in Hz
+        TH (float): Threshold value for pass/fail determination
+        
+    Returns:
+        tuple: (measured_loss (float), pass_status (bool))
+    """
+    Freq = ntwk.f
+    if ntwk.nports == 4:
+        mm_ntwk = mixed_mode_s_params(ntwk.s)
+        d2c1 = to_db(mm_ntwk['sdc21'])
+        d2c2 = to_db(mm_ntwk['sdc12'])
+    else:
+        print("diffrential2common_loss_test: input file must be S4P", file=sys.stderr)
+        sys.exit(1)  # Non-zero exit code indicates failure
+    
+    # Implementation example - replace with actual measurement logic
+    idx_freq_under_test = np.searchsorted(Freq, frequency)
+    pass_status1 = d2c1[idx_freq_under_test] <= TH
+    pass_status2 = d2c2[idx_freq_under_test] <= TH
+    pass_status = pass_status1 and pass_status2
+    return d2c1[idx_freq_under_test], d2c2[idx_freq_under_test], pass_status
+
 # Define the fitting function
 def il_fit_func(f, a0, a1, a2, a4):
     return a0 + a1*np.sqrt(f) + a2*f + a4*(f**2)
