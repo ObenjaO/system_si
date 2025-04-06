@@ -74,7 +74,7 @@ def add_dc_frequency_if_missing(ntwk):
         print("DC frequency already present, no need to add.")
         return ntwk
     
-def analyze_and_adjust_tdr(time, Z_t, segment_length=0.1E-9, r2_threshold=0.95):
+def analyze_and_adjust_tdr(time, Z_t, segment_length=0.05E-9, r2_threshold=0.90):
     """Analyze and adjust TDR in steps, updating Z_t after each valid segment."""
     num_points = len(time)
     idx_start = np.searchsorted(time, 0)  # Start from time >= 0
@@ -220,7 +220,6 @@ def adjust_tdr_analyze(time, Z_t, Tstart, Tend):
     return Z_t_adj, slope, r_squared
 
 def main(): 
-    Z0 = 50
     parser = argparse.ArgumentParser(description="Process an unknown number of file names.")
     parser.add_argument("files", nargs="+", help="List of file names to process")  # `nargs="+"` means at least one file
     args = parser.parse_args()
@@ -230,8 +229,9 @@ def main():
     # ========================================================================================================
     fig, (ax1, ax2,ax3) = plt.subplots(3, 1, figsize=(10, 12))
     for file in args.files:
-        print(f"Processing file: {file}")
         S_ntwk = rf.Network(file)
+        Z0 = S_ntwk.z0[0, 0]
+        print(f"Processing file: {file} - Z0 = {Z0}")
         S_ntwk = add_dc_frequency_if_missing(S_ntwk)
         if S_ntwk.nports == 4:
             factor = 2
@@ -280,8 +280,9 @@ def main():
 
 
     for file in args.files:
-        print(f"Processing file: {file}")
         S_ntwk = rf.Network(file)
+        Z0 = S_ntwk.z0[0, 0]
+        print(f"Processing file: {file} - Z0 = {Z0}")
         S_ntwk = add_dc_frequency_if_missing(S_ntwk)
         if S_ntwk.nports == 4:
             factor = 2

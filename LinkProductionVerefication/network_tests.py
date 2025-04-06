@@ -303,24 +303,6 @@ if __name__ == "__main__":
         print(f"Passed ILD FOM threshold test: {'Yes' if passed_FOM else 'No'}")
         
         # Optional plotting
-        '''
-        if ntwk.nports == 4:
-            mm_ntwk = mixed_mode_s_params(ntwk.s)
-            s21_db = to_db(mm_ntwk['sdd21'])
-            
-        else:
-            s21_db = to_db(ntwk.s[:, 0, 0])
-        il_fit = il_fit_func(freqs/1e9, *params)
-        plt.figure()
-        plt.plot(ntwk.f/1e9, s21_db, 'b-', label='Measured IL')
-        
-        plt.plot(freqs/1e9,il_fit, 'g--', label='***Fitted IL')
-        plt.xlabel('Frequency (GHz)')
-        plt.ylabel('Insertion Loss (dB)')
-        plt.legend()
-        plt.title('Insertion Loss and Fitted Curve')
-        plt.grid(True)
-        plt.show()
-        '''
+       
     except RuntimeError as e:
         print(f"Error: {str(e)}")
