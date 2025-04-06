@@ -7,6 +7,69 @@ import os
 import sys
 from s4p_self_cascading import to_db, mixed_mode_s_params
 
+def plot_s_parameters(ntwk1):
+    freq = ntwk1.f / 1e9
+    
+    # Handle both 2-port and 4-port for S21 and S11 (assuming differential or single-ended appropriately)
+    if ntwk1.nports == 2:
+        il21 = 20 * np.log10(np.abs(ntwk1.s[:, 1, 0]))
+        rl11 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 0]))
+        il12 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 1]))
+        rl22 = 20 * np.log10(np.abs(ntwk1.s[:, 1, 1]))
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
+        ax1.plot(freq, il21, label='S21')
+        ax1.plot(freq, il12, label='S12')
+        ax1.set_title('Insertion Loss compare')
+        ax1.set_xlabel('Frequency (GHz)')
+        ax1.set_ylabel('Insertion Loss (dB)')
+        ax1.grid(True)
+        ax1.legend()
+        ax2.plot(freq, rl11, label='S11')
+        ax2.plot(freq, rl22, label='S22')
+        ax2.set_title('Return Loss compare')
+        ax2.set_xlabel('Frequency (GHz)')
+        ax2.set_ylabel('Return Loss (dB)')
+        ax2.grid(True)
+        ax2.legend()
+        plt.tight_layout()
+    else:  # 4-port, assume differential S21_dd and S11_dd
+        mm_ntwk1 = mixed_mode_s_params(ntwk1.s)
+        fig, axes = plt.subplots(2, 1, figsize=(12, 10))  # 2x2 grid
+        axes = axes.flatten()  # Flatten for easy indexing
+        # Plot 1: Differential IL (Sdd21)
+        axes[0].plot(freq, to_db(mm_ntwk1['sdd21']), label='Sdd21')
+        axes[0].plot(freq, to_db(mm_ntwk1['sdd12']), label='Sdd12')
+        axes[0].set_title('Differential IL')
+        axes[0].set_ylabel('dB')
+        axes[0].grid(True)
+        axes[0].legend()
+
+        # Plot 2: Differential RL (Sdd11)
+        axes[1].plot(freq, to_db(mm_ntwk1['sdd11']), label='Sdd11')
+        axes[1].plot(freq, to_db(mm_ntwk1['sdd22']), label='Sdd22')
+        axes[1].set_title('Differential RL ')
+        axes[1].set_ylabel('dB')
+        axes[1].grid(True)
+        axes[1].legend()
+        plt.tight_layout()
+        
+        # Create a new figure for all S-parameters
+        fig, axs = plt.subplots(3, 2, figsize=(12, 15))  # 3x2 grid
+        axs = axs.flatten()  # Flatten for easy indexing
+        
+        # Plot all S-parameters (16 combinations for 4-port)
+        # We'll plot them in order S11, S12, S13, S14, S21, S22, etc.
+        for idx, (i, j) in enumerate([(x, y) for x in range(4) for y in range(x+1,4)]):
+            if idx >= len(axs):  # In case we have more S-parameters than subplots
+                break
+            axs[idx].plot(freq, to_db(ntwk1.s[:, j, i]), label=f"S{j+1}{i+1}")
+            axs[idx].plot(freq, to_db(ntwk1.s[:, i, j]), label=f"S{i+1}{j+1}")
+            
+            axs[idx].set_xlabel('Frequency (GHz)')
+            axs[idx].set_ylabel('dB')
+            axs[idx].grid(True)
+            axs[idx].legend()
+    plt.show()
 
 def plot_parameters(ntwk1, ntwk2,ntwk3, ntwk4 ):
     freq = ntwk1.f / 1e9
@@ -118,10 +181,10 @@ def main():
 
     # File names in current directory
     ''' for old sompare '''
-    file1_name = ".\Example_S_parameters\Stripline_2in_44p5_lossy.s2p"
-    file2_name = ".\Example_S_parameters\Stripline_2in_51Ohm_lossy.s2p"
-    file3_name = ".\Example_S_parameters\Stripline_2in_54p5_lossy.s2p"
-    file4_name = ".\Example_S_parameters\Stripline_bend_Strip_bend_cutout_2mm_extended_15n.s2p"
+    file1_name = ".\Example_S_parameters\QSFP112_Mated_File_HCB-WT27939_MCB-WT27320_RX1_trunc.s4p"
+    file2_name = ".\Example_S_parameters\QSFP112_Mated_File_HCB-WT27939_MCB-WT27320_RX2_trunc.s4p"
+    file3_name = ".\Example_S_parameters\Diff_5in_85ohm.s4p"
+    file4_name = ".\Example_S_parameters\Diff_5in.s4p"
     '''
     file1_name = "diff_cascde_10in_from_1in.s4p"
     file2_name = "diff_cascde_10in_from_5in.s4p"
@@ -131,8 +194,8 @@ def main():
     '''
     ntwk1 = rf.Network(file1_name)
     ntwk2 = rf.Network(file2_name)
-    ntwk3 = rf.Network(file3_name)
-    ntwk4 = rf.Network(file3_name)
+    ntwk3 = rf.Network(file1_name)
+    ntwk4 = rf.Network(file2_name)
     try:
         plot_parameters(ntwk1, ntwk2, ntwk3, ntwk4)
         plt.show()
