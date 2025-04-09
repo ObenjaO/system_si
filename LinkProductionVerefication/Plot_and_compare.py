@@ -71,6 +71,78 @@ def plot_s_parameters(ntwk1):
             axs[idx].legend()
     plt.show()
 
+def accumalte_plot_s_parameters(ntwk1, fig=None, axes=None, label=None):
+    """
+    Plot S-parameters, with option to add to existing plots
+    
+    Args:
+        ntwk1: Network object to plot
+        fig: Existing figure object (optional)
+        axes: Existing axes array (optional)
+        label: Label for this dataset (optional)
+        
+    Returns:
+        fig, axes: Figure and axes objects for further plotting
+    """
+    freq = ntwk1.f / 1e9
+    
+    # Create new figure if none provided
+    if fig is None or axes is None:
+        if ntwk1.nports == 2:
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
+            axes = [ax1, ax2]
+        else:  # 4-port
+            fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+    
+    # Handle both 2-port and 4-port
+    if ntwk1.nports == 2:
+        il21 = 20 * np.log10(np.abs(ntwk1.s[:, 1, 0]))
+        rl11 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 0]))
+        il12 = 20 * np.log10(np.abs(ntwk1.s[:, 0, 1]))
+        rl22 = 20 * np.log10(np.abs(ntwk1.s[:, 1, 1]))
+        
+        # Use provided label or default
+        label_suffix = f" ({label})" if label else ""
+        
+        axes[0].plot(freq, il21, label=f'S21{label_suffix}')
+        axes[0].plot(freq, il12, label=f'S12{label_suffix}')
+        axes[0].set_title('Insertion Loss compare')
+        axes[0].set_xlabel('Frequency (GHz)')
+        axes[0].set_ylabel('Insertion Loss (dB)')
+        axes[0].grid(True)
+        axes[0].legend()
+        
+        axes[1].plot(freq, rl11, label=f'S11{label_suffix}')
+        axes[1].plot(freq, rl22, label=f'S22{label_suffix}')
+        axes[1].set_title('Return Loss compare')
+        axes[1].set_xlabel('Frequency (GHz)')
+        axes[1].set_ylabel('Return Loss (dB)')
+        axes[1].grid(True)
+        axes[1].legend()
+        
+    else:  # 4-port, assume differential S21_dd and S11_dd
+        mm_ntwk1 = mixed_mode_s_params(ntwk1.s)
+        label_suffix = f" ({label})" if label else ""
+        
+        # Differential plots
+        axes[0].plot(freq, to_db(mm_ntwk1['sdd21']), label=f'Sdd21{label_suffix}')
+        axes[0].plot(freq, to_db(mm_ntwk1['sdd12']), label=f'Sdd12{label_suffix}')
+        axes[0].set_title('Differential IL')
+        axes[0].set_ylabel('dB')
+        axes[0].grid(True)
+        axes[0].legend()
+
+        axes[1].plot(freq, to_db(mm_ntwk1['sdd11']), label=f'Sdd11{label_suffix}')
+        axes[1].plot(freq, to_db(mm_ntwk1['sdd22']), label=f'Sdd22{label_suffix}')
+        axes[1].set_title('Differential RL')
+        axes[1].set_ylabel('dB')
+        axes[1].grid(True)
+        axes[1].legend()
+    
+    plt.tight_layout()
+    return fig, axes
+
+
 def plot_parameters(ntwk1, ntwk2,ntwk3, ntwk4 ):
     freq = ntwk1.f / 1e9
     

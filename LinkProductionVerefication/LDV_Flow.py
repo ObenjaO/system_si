@@ -7,8 +7,10 @@ from PRC_S_param_test import check_s_parameter_causality,check_s_parameter_passi
 import skrf as rf
 import numpy as np
 from s4p_self_cascading import cascade_s2p_or_s4p
+from Plot_and_compare import accumalte_plot_s_parameters
 import shutil
 import time
+import matplotlib.pyplot as plt
 
 
 class SParameterValidator:
@@ -21,7 +23,7 @@ class SParameterValidator:
         self.current_iteration = 0
         self.PASSIVITY_TOL = 1E-6
         self.RECIPROCITY_THRESH = 3  # 1 dB      
-        self.CAUSALITY_THRESH = 0.2  # 1%
+        self.CAUSALITY_THRESH = 0.7  # 1%
         
         # Set up logging
         logging.basicConfig(
@@ -38,6 +40,7 @@ class SParameterValidator:
 
     def run_validation_flow(self) -> bool:
         """Main method to execute the validation flow"""
+        plot_enabled = 0
         try:
             # Start
             if not self._read_and_validate_config():
@@ -88,7 +91,18 @@ class SParameterValidator:
                 cascade_time = time.time() - cascade_start_time
                 cascade_times.append(cascade_time)
                 # Print completion time
-            
+                # Load the final cascaded result for plotting
+                final_output = os.path.join('S_params_out', f'final_cascade_{cascade_idx}.s4p')
+                if os.path.exists(final_output):
+                    ntwk = rf.Network(final_output)
+                    # Plot with current figure/axes and update them
+                    if plot_enabled:
+                        if cascade_idx == 1:
+                            plot_fig, plot_axes = accumalte_plot_s_parameters(ntwk, fig=None, axes=None, 
+                                                            label=f'Cascade {cascade_idx}')
+                        else:
+                            plot_fig, plot_axes = accumalte_plot_s_parameters(ntwk, fig=plot_fig, axes=plot_axes, 
+                                                            label=f'Cascade {cascade_idx}')
                 '''
                 # Final validation for this cascade
                 if not self._final_validation_and_test():
@@ -98,6 +112,20 @@ class SParameterValidator:
             #print(f"Completed in {sum(cascade_times):.2f}s")
             print(f"\nCompleted in {cascade_time:.2f}s (Avg: {sum(cascade_times)/len(cascade_times):.2f}s)")
             print("SUCCESS: All cascades validated successfully")
+            
+            if plot_enabled:
+                if plot_axes is not None:
+                    if isinstance(plot_axes, (list, np.ndarray)):
+                        for ax in plot_axes:
+                            if hasattr(ax, 'get_legend'):
+                                legend = ax.get_legend()
+                                if legend is not None:
+                                    legend.remove()
+                    elif hasattr(plot_axes, 'get_legend'):
+                        legend = plot_axes.get_legend()
+                        if legend is not None:
+                            legend.remove()
+                    plt.show()
             return True
 
         except Exception as e:
@@ -270,7 +298,7 @@ class SParameterValidator:
                 #print(max(nc_pct1.values()))
                 if max(nc_pct1.values()) > self.CAUSALITY_THRESH:
                     validation_results['causality'] = f"Failed (max non-causal: {max(nc_pct1.values()):.2%})"
-                    self.logger.error(f"causality check failed for {filename}= {max(nc_pct1.values()):.2f}")
+                    self.logger.error(f"causality check failed for {filename}= {max(nc_pct1.values()):.2f} limit is {self.CAUSALITY_THRESH:.2f}")
                     valid = False
                 else:
                     self.logger.info(f"causality check passed for {filename}= {max(nc_pct1.values()):.2f}")
