@@ -92,7 +92,7 @@ def accumalte_plot_s_parameters(ntwk1, fig=None, axes=None, label=None):
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
             axes = [ax1, ax2]
         else:  # 4-port
-            fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+            fig, axes = plt.subplots(3, 1, figsize=(12, 10))
     
     # Handle both 2-port and 4-port
     if ntwk1.nports == 2:
@@ -138,6 +138,13 @@ def accumalte_plot_s_parameters(ntwk1, fig=None, axes=None, label=None):
         axes[1].set_ylabel('dB')
         axes[1].grid(True)
         axes[1].legend()
+
+        axes[2].plot(freq, to_db(mm_ntwk1['sdd21'])/to_db(mm_ntwk1['sdd11']), label=f'{label_suffix}')
+        
+        axes[2].set_title('Differential IL to RL ratio')
+        axes[2].set_ylabel('dB')
+        axes[2].grid(True)
+        axes[2].legend()
     
     plt.tight_layout()
     return fig, axes

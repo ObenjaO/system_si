@@ -35,8 +35,8 @@ def insertion_loss_test(ntwk, frequency, TH):
         IL2 = to_db(ntwk.s[:, 0, 1])
     # Implementation example - replace with actual measurement logic
     idx_freq_under_test = np.searchsorted(Freq, frequency)
-    pass_status1 = IL1[idx_freq_under_test] <= TH
-    pass_status2 = IL2[idx_freq_under_test] <= TH
+    pass_status1 = IL1[idx_freq_under_test] >= TH
+    pass_status2 = IL2[idx_freq_under_test] >= TH
     pass_status = pass_status1 and pass_status2
     return IL1[idx_freq_under_test], IL2[idx_freq_under_test], pass_status
 

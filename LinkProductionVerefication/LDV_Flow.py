@@ -11,13 +11,18 @@ from Plot_and_compare import accumalte_plot_s_parameters
 import shutil
 import time
 import matplotlib.pyplot as plt
-
+from network_tests import insertion_loss_test, return_loss_test, diffrential2common_loss_test, max_ILD_test, effective_return_loss
+from log_praser import build_cascade_database
+from LDV_analyze import analyze_and_plot_histograms, plot_test_type_histograms,plot_max_ild_histograms, extract_cascade_files, extract_and_sort_log_results, extract_cascade_files, extract_and_sort_log_results, extract_worst_constellations, create_cascade_metrics_table_from_log, create_worst_results_cascade
 
 class SParameterValidator:
-    def __init__(self, config_file: str, max_iterations: int = 10):
+    def __init__(self, config_file: str, test_file: str,freq_rate: float = 26.5625e9,max_iterations: int = 10):
         self.config_file = config_file
+        self.test_file = test_file
         self.max_iterations = max_iterations
+        self.freq_rate = freq_rate
         self.config_data = None
+        self.test_data = None
         self.s_param_files = []
         self.port_assignments = {}
         self.current_iteration = 0
@@ -44,7 +49,11 @@ class SParameterValidator:
         try:
             # Start
             if not self._read_and_validate_config():
-                print("FAIL: Configuration validation failed")
+                print("FAIL: test struct validation failed")
+                return False
+            
+            if not self._read_and_validate_test():
+                print("FAIL: test TH validation failed")
                 return False
 
             if not self._validate_s_param_files_exist():
@@ -54,78 +63,29 @@ class SParameterValidator:
             if not self._validate_s4p_files():
                 print("FAIL: S4P file properties validation failed")
                 return False
-
+            # Generate all possible cascades and print them
             all_cascades = self.print_all_cascades()
-            # Generate all possible cascades
-            #all_cascades = validator.generate_all_cascades()
-
+            
             # Filter based on constraints
             valid_cascades = validator.filter_constrained_cascades(all_cascades)
 
             # Print results
             print(f"\nFound {len(valid_cascades)} valid cascade combinations after constraints:")
-            for i, cascade in enumerate(valid_cascades, 1):
-                cascade_str = " -> ".join(
-                    f"{entry['block_name']}.{entry['file_name']}"
-                    for entry in cascade
-                )
-                print(f"{i:3d}: {cascade_str}")
             
-            # Process each valid cascade
-            start_time = time.time()
-            cascade_times = []  # To track processing time per cascade
-            for cascade_idx, cascade in enumerate(valid_cascades, 1):
-                cascade_start_time = time.time()
-                self.current_iteration = cascade_idx
-                self.logger.info(f"\nProcessing cascade {cascade_idx}/{len(valid_cascades)}: {(cascade)}")
-                if cascade_times:
-                    avg_time = sum(cascade_times) / len(cascade_times)
-                    remaining = avg_time * (len(valid_cascades) - cascade_idx)
-                    #print(f"Estimated time remaining: {remaining:.1f}s (~{remaining/60:.1f} minutes)")
-                    print(f"\rEstimated time remaining: {remaining:.1f}s (~{remaining/60:.1f} minutes): based {cascade_idx} file out of {len(valid_cascades)}   ", end="", flush=True)
-                
-                if not self._process_cascade(cascade):
-                    print(f"FAIL: Cascade {cascade_idx} validation failed")
-                    return False
-                # Calculate and store cascade processing time
-                cascade_time = time.time() - cascade_start_time
-                cascade_times.append(cascade_time)
-                # Print completion time
-                # Load the final cascaded result for plotting
-                final_output = os.path.join('S_params_out', f'final_cascade_{cascade_idx}.s4p')
-                if os.path.exists(final_output):
-                    ntwk = rf.Network(final_output)
-                    # Plot with current figure/axes and update them
-                    if plot_enabled:
-                        if cascade_idx == 1:
-                            plot_fig, plot_axes = accumalte_plot_s_parameters(ntwk, fig=None, axes=None, 
-                                                            label=f'Cascade {cascade_idx}')
-                        else:
-                            plot_fig, plot_axes = accumalte_plot_s_parameters(ntwk, fig=plot_fig, axes=plot_axes, 
-                                                            label=f'Cascade {cascade_idx}')
-                '''
-                # Final validation for this cascade
-                if not self._final_validation_and_test():
-                    print(f"FAIL: Final validation failed for cascade {cascade_idx}")
-                    return False
-                '''
-            #print(f"Completed in {sum(cascade_times):.2f}s")
-            print(f"\nCompleted in {cascade_time:.2f}s (Avg: {sum(cascade_times)/len(cascade_times):.2f}s)")
-            print("SUCCESS: All cascades validated successfully")
+            if not self._wrap_process_cascade(valid_cascades):
+                print("FAIL: wrap Cascade processing failed")
+                return False
             
-            if plot_enabled:
-                if plot_axes is not None:
-                    if isinstance(plot_axes, (list, np.ndarray)):
-                        for ax in plot_axes:
-                            if hasattr(ax, 'get_legend'):
-                                legend = ax.get_legend()
-                                if legend is not None:
-                                    legend.remove()
-                    elif hasattr(plot_axes, 'get_legend'):
-                        legend = plot_axes.get_legend()
-                        if legend is not None:
-                            legend.remove()
-                    plt.show()
+            # In run_validation_flow method, add this before the final return True:
+            if not self._validate_final_cascades():
+                print("FAIL: Final cascade validation failed - continue test")
+                #return False
+            
+            if not self._test_method_process():
+                print("FAIL: Test method process failed - continue test")
+                #return False
+            
+            plt.show()
             return True
 
         except Exception as e:
@@ -141,53 +101,53 @@ class SParameterValidator:
                 self.config_data = json.load(f)
             # Validate root structure
             if not isinstance(self.config_data, dict):
-                return self._log_and_return_false("Config file must be a JSON object (dict)")
-            self.logger.info("The file is a JSON object (dict)")
+                return self._log_and_return_false("read_and_validate_config:Config file must be a JSON object (dict)")
+            self.logger.info("read_and_validate_config:The file is a JSON object (dict)")
             if 'blocks' not in self.config_data:
-                return self._log_and_return_false("Missing required 'blocks' field in config")
-            self.logger.info("blocks exists in the config file")
+                return self._log_and_return_false("read_and_validate_config:Missing required 'blocks' field in config")
+            self.logger.info("read_and_validate_config:blocks exists in the config file")
             # Validate blocks structure
             if not isinstance(self.config_data['blocks'], list):
-                return self._log_and_return_false("'blocks' must be an array")
-            self.logger.info("blocks is an array")    
+                return self._log_and_return_false("read_and_validate_config:'blocks' must be an array")
+            self.logger.info("read_and_validate_config:blocks is an array")    
             for i, block in enumerate(self.config_data['blocks'], 1):
                 if not isinstance(block, dict):
-                    return self._log_and_return_false(f"Block {i} must be an object, got {type(block)}")
-                self.logger.info(f"Block {i} is an object")
+                    return self._log_and_return_false(f"read_and_validate_config:Block {i} must be an object, got {type(block)}")
+                self.logger.info(f"read_and_validate_config:Block {i} is an object")
                 
                 if 'name' not in block:
-                    return self._log_and_return_false(f"Block {i} missing required 'name' field")
-                self.logger.info(f"Block {i} has a name")
+                    return self._log_and_return_false(f"read_and_validate_config:Block {i} missing required 'name' field")
+                self.logger.info(f"read_and_validate_config:Block {i} has a name")
                 
                 if 'files' not in block and 'constraint' not in block:
-                    return self._log_and_return_false(f"Block {i} must have either 'files' or 'constraint'")
-                self.logger.info(f"Block {i} has files or constraint")
+                    return self._log_and_return_false(f"read_and_validate_config:Block {i} must have either 'files' or 'constraint'")
+                self.logger.info(f"read_and_validate_config:Block {i} has files or constraint")
                 
                 for j, file_entry in enumerate(block['files'], 1):
                     if not isinstance(file_entry, dict):
                         return self._log_and_return_false(
-                            f"File entry {j} in block {i} must be an object, got {type(file_entry)}")
-                    self.logger.info(f"File entry {j} in block {i} is an object")
+                            f"read_and_validate_config:File entry {j} in block {i} must be an object, got {type(file_entry)}")
+                    self.logger.info(f"read_and_validate_config:File entry {j} in block {i} is an object")
 
                     # Mandatory file fields
                     if 'name' not in file_entry:
                         return self._log_and_return_false(
-                            f"File entry {j} in block {i} missing required 'name' field")
-                    self.logger.info(f"File entry {j} in block {i} has a name")
+                            f"read_and_validate_config:File entry {j} in block {i} missing required 'name' field")
+                    self.logger.info(f"read_and_validate_config:File entry {j} in block {i} has a name")
 
                     # port_assignment validation
                     if file_entry['port_assignment'] not in ['12>>34', '13>>24', '1>>2']:
                         return self._log_and_return_false(
-                                    f"File entry {j} in block {i} has invalid port_assignment " +
+                                    f"read_and_validate_config:File entry {j} in block {i} has invalid port_assignment " +
                                     f"'{file_entry['port_assignment']}'. Must be '12<<34', '13<<24', or 'n1>>2ot'")
-                    self.logger.info(f"File entry {j} in block {i} has valid port_assignment")
+                    self.logger.info(f"read_and_validate_config:File entry {j} in block {i} has valid port_assignment")
                     
                     if ('constraint' in file_entry and 
                         file_entry['constraint'] is not None and 
                         not isinstance(file_entry['constraint'], str)):
                         return self._log_and_return_false(
-                            f"File entry {j} in block {i} constraint must be string or null {file_entry}")
-                    self.logger.info(f"File entry {j} in block {i} has a valid constraint {file_entry}")
+                            f"read_and_validate_config:File entry {j} in block {i} constraint must be string or null {file_entry}")
+                    self.logger.info(f"read_and_validate_config:File entry {j} in block {i} has a valid constraint {file_entry}")
                     
                     
                     # Constraint validation
@@ -196,34 +156,103 @@ class SParameterValidator:
                         if 'constraint' in file_entry:
                             if 'constraint_type' not in file_entry:
                                 return self._log_and_return_false(
-                                    f"File entry {j} in block {i} has constraint but missing 'constraint_type'")
-                            self.logger.info(f"File entry {j} in block {i} has constraint_type")
+                                    f"read_and_validate_config:File entry {j} in block {i} has constraint but missing 'constraint_type'")
+                            self.logger.info(f"read_and_validate_config:File entry {j} in block {i} has constraint_type")
 
                             if file_entry['constraint_type'] not in ['must', 'must_not']:
                                 return self._log_and_return_false(
-                                    f"File entry {j} in block {i} has invalid constraint_type " +
+                                    f"read_and_validate_config:File entry {j} in block {i} has invalid constraint_type " +
                                     f"'{file_entry['constraint_type']}'. Must be 'yes', 'no', or 'not'")
-                            self.logger.info(f"File entry {j} in block {i} has valid constraint_type")
+                            self.logger.info(f"read_and_validate_config:File entry {j} in block {i} has valid constraint_type")
             
             self.s_param_files = self._extract_s_param_files_from_config()
             self.port_assignments = self._extract_port_assignments()
-            self.logger.info("Config file validation passed successfully")
-            print(f"Config file validation passed successfully. Found {len(self.s_param_files)} S-parameter files.")
+            self.logger.info("read_and_validate_config:Config file validation passed successfully")
+            print(f"Test_struct file validation passed successfully. Found {len(self.s_param_files)} S-parameter files.")
             for filename in self.s_param_files:
-                print(f"- {filename}")
+                self.logger.info(f"Existing S-parameter - {filename}")
             return True
             
         except json.JSONDecodeError as e:
-            return self._log_and_return_false(f"Invalid JSON format: {str(e)}")
+            return self._log_and_return_false(f"Invalid Test_struct JSON format: {str(e)}")
         except Exception as e:
-            return self._log_and_return_false(f"Unexpected error reading config: {str(e)}")
+            return self._log_and_return_false(f"Unexpected error reading Test_struct: {str(e)}")
 
+    def _read_and_validate_test(self) -> bool:
+        
+        """Load and validate the entire test configuration file"""
+        self.logger.info(f"\n{'='*50}")
+        self.logger.info(f"Starting reading Test_TH.json")
+        try:
+            with open(self.test_file) as f:
+                data = json.load(f)
+            # Validate root structure
+            
+            if not isinstance(self.config_data, dict):
+                return self._log_and_return_false("read_and_validate_test:test file must be a JSON object (dict)")
+            self.logger.info("read_and_validate_test:The test file is a JSON object (dict)")
+            # Check if 'tests' exists and is a list
+            if 'tests' not in data or not isinstance(data['tests'], list):
+                return self._log_and_return_false("read_and_validate_test:Missing required 'tests' field in config")
+            self.logger.info("read_and_validate_test:tests exists in the test file")
+            # Check each test in the tests list
+            for test in data['tests']:
+                # 1. Check test has 'name'
+                if 'name' not in test or not isinstance(test['name'], str):
+                    return self._log_and_return_false("read_and_validate_test:Missing required 'name' field in test")
+                self.logger.info(f"read_and_validate_test:Test {test['name']} has a name")
+                # 2. Check test has 'frequency'
+                if 'frequency' not in test:
+                    return self._log_and_return_false(f"read_and_validate_test:Missing required 'frequency' field in test {test['name']}")
+                self.logger.info(f"read_and_validate_test:Test {test['name']} has a frequency")
+                freq = test['frequency']
+                
+                # 3. Check frequency has either 'specific' or 'range' (but not both)
+                if not (('specific' in freq) ^ ('range' in freq)):  # XOR operation
+                    return self._log_and_return_false(f"read_and_validate_test:Missing either 'specific' or 'range' in 'frequency' field in test {test['name']}")
+                self.logger.info(f"read_and_validate_test:Test {test['name']} has a valid frequency")
+                # Validate the frequency value
+                if 'specific' in freq:
+                    if not isinstance(freq['specific'], (int, float)):
+                        return self._log_and_return_false(f"read_and_validate_test:'frequency' field in test {test['name']} - is not int or float")
+                    self.logger.info(f"read_and_validate_test:Test {test['name']} has a valid specific frequency")
+                else:  # has 'range'
+                    if not isinstance(freq['range'], dict):
+                        return self._log_and_return_false(f"read_and_validate_test:'frequency' field in test {test['name']} - is not a object (dict)")
+                    self.logger.info(f"read_and_validate_test:'frequency' field in test {test['name']} is a dict")
+                    if not all(key in freq['range'] for key in ['min', 'max']):
+                        return self._log_and_return_false(f"read_and_validate_test:'frequency' field in test {test['name']} - the range is missing min or max")
+                    self.logger.info(f"read_and_validate_test:'frequency' field in test {test['name']} has min and max")
+                    if not all(isinstance(freq['range'][key], (int, float)) for key in ['min', 'max']):
+                        return self._log_and_return_false(f"read_and_validate_test:'frequency' field in test {test['name']} - the range min or max is not int or float")
+                    self.logger.info(f"read_and_validate_test:'frequency' field in test {test['name']} - the range min and max are int or float")
+                    if freq['range']['min'] > freq['range']['max']:
+                        return self._log_and_return_false(f"read_and_validate_test:'frequency' field in test {test['name']} - min is greater than max")
+                    self.logger.info(f"read_and_validate_test:'frequency' field in test {test['name']} - min is less than max")
+                
+                # Check test has 'th_limit'
+                if 'th_limit' not in test or not isinstance(test['th_limit'], (int, float)):
+                    return self._log_and_return_false(f"read_and_validate_test:In test {test['name']} - there is no th_limit")
+                self.logger.info(f"read_and_validate_test:Test {test['name']} has a th_limit")
+            # If all validations pass, save the data
+            self.test_data = data
+            self.logger.info("read_and_validate_test:Test_TH file validation passed successfully")
+            print(f"Test_TH file validation passed successfully. Found {len(self.test_data['tests'])} tests.")
+            return True
+            
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Error loading Test_TH file JSON format: {e}")
+            return False
+        except Exception as e:
+            print(f"Unexpected error loading Test_TH:: {e}")
+            return False
 
     def _validate_s_param_files_exist(self) -> bool:
         """Validate all S-parameter files exist (Step 2)"""
         # Implementation would check each file exists in the filesystem
         try:
             missing_files = []
+            inconsistent_files = []
             s_param_in_path = os.path.join('.', 'S_params_in')
             
             # First collect all unique file names from the config
@@ -251,6 +280,60 @@ class SParameterValidator:
                 return self._log_and_return_false(error_msg)
                 
             self.logger.info(f"All {len(all_required_files)} required S-parameter files exist in .\\S_param_in")
+            # =================
+            # Additional tests for frequency consistency
+            frequency_lengths = {}
+            start_frequencies = {}
+            end_frequencies = {}
+            
+            # Load each S-parameter file and collect frequency data
+            for filename in all_required_files:
+                file_path = os.path.join(s_param_in_path, filename)
+                try:
+                    ntwk = rf.Network(file_path)
+                    freq = ntwk.f  # Frequency array in Hz
+                    frequency_lengths[filename] = len(freq)
+                    start_frequencies[filename] = freq[0]
+                    end_frequencies[filename] = freq[-1]
+                except Exception as e:
+                    inconsistent_files.append((filename, f"Failed to read frequency data: {str(e)}"))
+            
+            # Test 1: Check if all S-parameter files have the same number of frequency points
+            # It converts the values of frequency_lengths (the lengths) to a set to identify unique lengths.
+            # If the set contains more than one value (len(set(frequency_lengths.values())) > 1), it means 
+            # the files have different numbers of frequency points, and the test fails.
+            if len(set(frequency_lengths.values())) > 1:
+                error_msg = "S-parameter files have inconsistent frequency point counts:\n"
+                for fname, length in frequency_lengths.items():
+                    error_msg += f"  - {fname}: {length} points\n"
+                    self.logger.error(error_msg)
+                inconsistent_files.append(("Frequency Length", error_msg))
+            self.logger.info(f"All S-parameter files have the same number of frequency points")
+            # Test 2: Check if all S-parameter files start at the same frequency
+            if len(set(start_frequencies.values())) > 1:
+                error_msg = "S-parameter files have inconsistent start frequencies:\n"
+                for fname, freq in start_frequencies.items():
+                    error_msg += f"  - {fname}: {freq:.2e} Hz\n"
+                    self.logger.error(error_msg)
+                inconsistent_files.append(("Start Frequency", error_msg))
+            self.logger.info(f"All S-parameter files have the same start frequency")
+            # Test 3: Check if all S-parameter files end at the same frequency
+            if len(set(end_frequencies.values())) > 1:
+                error_msg = "S-parameter files have inconsistent end frequencies:\n"
+                for fname, freq in end_frequencies.items():
+                    error_msg += f"  - {fname}: {freq:.2e} Hz\n"
+                    self.logger.error(error_msg)
+                inconsistent_files.append(("End Frequency", error_msg))
+            self.logger.info(f"All S-parameter files have the same end frequency")
+            if inconsistent_files:
+                error_msg = "S-parameter Frequency Validation Failures:\n"
+                for test_name, msg in inconsistent_files:
+                    error_msg += f"\n{test_name}:\n{msg}"
+                return self._log_and_return_false(error_msg)
+            
+            self.logger.info(f"All {len(all_required_files)} S-parameter files have consistent frequency properties")
+            # =================
+
             return True
         
         except Exception as e:
@@ -350,7 +433,6 @@ class SParameterValidator:
             f.write(str(final_result))
             
         return True
-
     # Placeholder methods for actual implementations
     def _extract_s_param_files_from_config(self) -> List[str]:
         """Extract S-parameter file paths from the new config structure"""
@@ -443,7 +525,8 @@ class SParameterValidator:
                 f"{entry['block_name']}.{entry['file_name']}"
                 for entry in cascade
             )
-            print(f"{i:3d}: {cascade_str}")
+            self.logger.info(f"\nUnfilter cascade: {(cascade_str)}")
+            #print(f"{i:3d}: {cascade_str}")
         
         return cascades
 
@@ -499,6 +582,8 @@ class SParameterValidator:
                 self.logger.info("  Cascade INVALID")
         
         self.logger.info(f"\nFiltered {len(cascades)} cascades down to {len(valid_cascades)} valid cascades")
+        for cascade in enumerate(valid_cascades, 1):
+            self.logger.info(f"\nValid cascade: {(cascade)}")
         return valid_cascades
 
     def _process_cascade(self, cascade: List[Dict]) -> bool:
@@ -639,9 +724,252 @@ class SParameterValidator:
             self.logger.error(f"Unexpected error processing cascade: {str(e)}", exc_info=True)
             return self._log_and_return_false(f"Error processing cascade: {str(e)}")
     
-# Example usage
+    def _wrap_process_cascade(self, valid_cascades: List[List[Dict]]) -> bool:
+        # Process each valid cascade
+        plot_enabled = 1
+        start_time = time.time()
+        cascade_times = []  # To track processing time per cascade
+        for cascade_idx, cascade in enumerate(valid_cascades, 1):
+            cascade_start_time = time.time()
+            self.current_iteration = cascade_idx
+            self.logger.info(f"\nProcessing cascade {cascade_idx}/{len(valid_cascades)}")
+            if cascade_times:
+                avg_time = sum(cascade_times) / len(cascade_times)
+                remaining = avg_time * (len(valid_cascades) - cascade_idx)
+                #print(f"Estimated time remaining: {remaining:.1f}s (~{remaining/60:.1f} minutes)")
+                print(f"\rEstimated time remaining: {remaining:.1f}s (~{remaining/60:.1f} minutes): based {cascade_idx} file out of {len(valid_cascades)}: Files in cascade: {[entry['file_name'] for entry in cascade]}", end="", flush=True)
+            
+            if not self._process_cascade(cascade):
+                print(f"FAIL: Cascade {cascade_idx} validation failed")
+                return False
+            # Calculate and store cascade processing time
+            cascade_time = time.time() - cascade_start_time
+            cascade_times.append(cascade_time)
+            # Print completion time
+            # Load the final cascaded result for plotting
+            final_output = os.path.join('S_params_out', f'final_cascade_{cascade_idx}.s4p')
+            if os.path.exists(final_output):
+                ntwk = rf.Network(final_output)
+                # Plot with current figure/axes and update them
+                if plot_enabled:
+                    if cascade_idx == 1:
+                        plot_fig, plot_axes = accumalte_plot_s_parameters(ntwk, fig=None, axes=None, 
+                                                        label=f'Cascade {cascade_idx}')
+                    else:
+                        plot_fig, plot_axes = accumalte_plot_s_parameters(ntwk, fig=plot_fig, axes=plot_axes, 
+                                                        label=f'Cascade {cascade_idx}')
+        #print(f"Completed in {sum(cascade_times):.2f}s")
+        print(f"\nCompleted in {cascade_time:.2f}s (Avg: {sum(cascade_times)/len(cascade_times):.2f}s)")
+        print("SUCCESS: All cascades validated successfully")
+        if plot_enabled:
+                if plot_axes is not None:
+                    if isinstance(plot_axes, (list, np.ndarray)):
+                        for ax in plot_axes:
+                            if hasattr(ax, 'get_legend'):
+                                legend = ax.get_legend()
+                                if legend is not None:
+                                    legend.remove()
+                    elif hasattr(plot_axes, 'get_legend'):
+                        legend = plot_axes.get_legend()
+                        if legend is not None:
+                            legend.remove()
+                    plt.tight_layout()
+        return True
+    
+    def _validate_final_cascades(self) -> bool:
+        """Validate all final cascade S-parameter files in S_params_out folder"""
+        invalid_files = []
+        s_param_out_path = os.path.join('.', 'S_params_out')
+        
+        # Find all final cascade files
+        final_cascade_files = [
+            f for f in os.listdir(s_param_out_path) 
+            if f.startswith('final_cascade_') and f.lower().endswith(('.s2p', '.s4p'))
+        ]
+        
+        if not final_cascade_files:
+            return self._log_and_return_false("No final cascade files found in S_params_out folder")
+        
+        self.logger.info(f"Found {len(final_cascade_files)} final cascade files to validate")
+        
+        for filename in final_cascade_files:
+            try:
+                file_path = os.path.join(s_param_out_path, filename)
+                ntwk = rf.Network(file_path)
+                valid = True
+                validation_results = {}
+                
+                # 1. Passivity Check
+                max_eig, _ = check_s_parameter_passivity(ntwk, filename)
+                if np.any(max_eig > 1.0 + self.PASSIVITY_TOL):
+                    validation_results['passivity'] = f"Failed (max eigenvalue: {np.max(max_eig):.6f})"
+                    self.logger.error(f"Passivity check failed for {filename} = {np.max(max_eig):.2f}")
+                    valid = False
+                else:
+                    self.logger.info(f"Passivity check passed for {filename} = {np.max(max_eig):.2f}")
+                    validation_results['passivity'] = "Passed"
+                
+                # 2. Reciprocity Check
+                _, max_dev = check_s_parameter_reciprocity(ntwk, filename, percentage_threshold=self.RECIPROCITY_THRESH)
+                if np.any(max_dev > self.RECIPROCITY_THRESH):
+                    validation_results['reciprocity'] = f"Failed (max deviation: {np.max(max_dev):.2f} dB)"
+                    self.logger.error(f"Reciprocity check failed for {filename} = {np.max(max_dev):.2f}")
+                    valid = False
+                else:
+                    self.logger.info(f"Reciprocity check passed for {filename} = {np.max(max_dev):.2f}")
+                    validation_results['reciprocity'] = "Passed"
+                
+                # 3. Causality Check
+                # For final cascades, we might not have port assignments, so we'll use a default
+                port_assignment = '12>>34' if ntwk.nports == 4 else '1>>2'
+                impulse_responses, nc_pct1, t = check_s_parameter_causality(
+                    network=ntwk, 
+                    name=filename,
+                    percentage_threshold=self.CAUSALITY_THRESH,
+                    port_assignment=port_assignment
+                )
+                
+                if max(nc_pct1.values()) > self.CAUSALITY_THRESH:
+                    validation_results['causality'] = f"Failed (max non-causal: {max(nc_pct1.values()):.2%})"
+                    self.logger.error(f"Causality check failed for {filename} = {max(nc_pct1.values()):.2f}")
+                    valid = False
+                else:
+                    self.logger.info(f"Causality check passed for {filename} = {max(nc_pct1.values()):.2f}")
+                    validation_results['causality'] = "Passed"
+                
+                if not valid:
+                    invalid_files.append((filename, validation_results))
+                    
+            except Exception as e:
+                invalid_files.append((filename, {"error": f"Processing failed: {str(e)}"}))
+        
+        if invalid_files:
+            error_msg = "Final Cascade Validation Failures:\n"
+            for filename, results in invalid_files:
+                error_msg += f"\nFile: {filename}\n"
+                if 'error' in results:
+                    error_msg += f"  - ERROR: {results['error']}\n"
+                else:
+                    for test, result in results.items():
+                        error_msg += f"  - {test.upper()}: {result}\n"
+            return self._log_and_return_false(error_msg)
+        
+        self.logger.info(f"All {len(final_cascade_files)} final cascade files passed validation checks")
+        print(f"Final cascade validation passed successfully. Validated {len(final_cascade_files)} files.")
+        return True
+
+    def _test_method_process(self) -> bool:
+        """Process all test methods on the final cascaded S-parameter files"""
+        try:
+            s_param_out_path = os.path.join('.', 'S_params_out')
+            
+            # Find all final cascade files
+            final_cascade_files = [
+                f for f in os.listdir(s_param_out_path) 
+                if f.startswith('final_cascade_') and f.lower().endswith(('.s2p', '.s4p'))
+            ]
+            
+            if not final_cascade_files:
+                return self._log_and_return_false("test_method_process::No final cascade files found for testing")
+            
+            self.logger.info(f"\nStarting test processing on {len(final_cascade_files)} cascade files")
+            print(f"\nStarting test processing on {len(final_cascade_files)} cascade files")
+            
+            # Process each test in the test configuration
+            for test in self.test_data['tests']:
+                test_name = test['name']
+                self.logger.info(f"Processing test: {test_name}")
+                print(f"*****     Processing test: {test_name}")
+                # Determine frequency range for the test
+                if 'specific' in test['frequency']:
+                    freq = test['frequency']['specific']
+                    freq_range = (freq, freq)  # Single frequency as a range
+                else:
+                    freq_range = (test['frequency']['range']['min'], test['frequency']['range']['max'])
+                
+                # Process each cascade file with this test
+                for filename in final_cascade_files:
+                    file_path = os.path.join(s_param_out_path, filename)
+                    try:
+                        ntwk = rf.Network(file_path)
+                        
+                        # Call the appropriate test method based on test name
+                        if test_name == "InsertionLoss":
+                            IL1,IL2,result = insertion_loss_test(ntwk, freq, test['th_limit'])
+                            if result == True:
+                                self.logger.info(f"Test {test_name} passed for {filename} with IL1: {IL1:.2f} dB, IL2: {IL2:.2f} dB, THreshold: {test['th_limit']} dB")
+                            else:
+                                self.logger.error(f"Test {test_name} failed for {filename} with IL1: {IL1:.2f} dB, IL2: {IL2:.2f} dB, THreshold: {test['th_limit']} dB")
+                        elif test_name == "ReturnLoss":
+                            RL1,RL2,result = return_loss_test(ntwk, freq, test['th_limit'])
+                            if result == True:
+                                self.logger.info(f"Test {test_name} passed for {filename} with RL1: {RL1:.2f} dB, RL2: {RL2:.2f} dB, THreshold: {test['th_limit']} dB")
+                            else:
+                                self.logger.error(f"Test {test_name} failed for {filename} with RL1: {RL1:.2f} dB, RL2: {RL2:.2f} dB, THreshold: {test['th_limit']} dB")
+                        elif test_name == "Max_ILD":
+                            max_deviation, min_deviation, avg_deviation, pass_fail_ILD,pass_fail_FOM, frequencies, deviations, fit_params,fom_ild_value = max_ILD_test(ntwk, self.freq_rate, freq_range[0],freq_range[1], TH_ILD = test['th_limit'],TH_FOM = 10,debug_mode=0)
+                            if pass_fail_ILD == True:
+                                self.logger.info(f"Test {test_name} passed for {filename} with max deviation: {max_deviation:.2f} dB,avg deviation: {avg_deviation:.2f} dB,FOM ILD: {fom_ild_value:.2f} dB, THreshold: {test['th_limit']} dB")
+                            else:
+                                self.logger.error(f"Test {test_name} failed for {filename} with max deviation: {max_deviation:.2f} dB,avg deviation: {avg_deviation:.2f} dB,FOM ILD: {fom_ild_value:.2f} dB, THreshold: {test['th_limit']} dB")
+                        elif test_name == "FOM_ILD":
+                            max_deviation, min_deviation, avg_deviation, pass_fail_ILD,pass_fail_FOM, frequencies, deviations, fit_params,fom_ild_valueresult =  max_ILD_test(ntwk, self.freq_rate, freq_range[0],freq_range[1], TH_ILD = 10, TH_FOM = test['th_limit'],debug_mode=0)
+                            if pass_fail_ILD == True:
+                                self.logger.info(f"Test {test_name} passed for {filename} with max deviation: {max_deviation:.2f} dB,avg deviation: {avg_deviation:.2f} dB,FOM ILD: {fom_ild_value:.2f} dB, THreshold: {test['th_limit']} dB")
+                            else:
+                                self.logger.error(f"Test {test_name} failed for {filename} with max deviation: {max_deviation:.2f} dB,avg deviation: {avg_deviation:.2f} dB,FOM ILD: {fom_ild_value:.2f} dB, THreshold: {test['th_limit']} dB")
+                        elif test_name == "D2C":
+                            d2c1,d2c2,result = diffrential2common_loss_test(ntwk, freq, test['th_limit'])
+                            if result == True:
+                                self.logger.info(f"Test {test_name} passed for {filename} with D2C1: {d2c1:.2f} dB, D2C2: {d2c2:.2f} dB, THreshold: {test['th_limit']} dB")
+                            else:
+                                self.logger.error(f"Test {test_name} failed for {filename} with D2C1: {d2c1:.2f} dB, D2C2: {d2c2:.2f} dB, THreshold: {test['th_limit']} dB")
+                        elif test_name == "ERL":
+                            result = effective_return_loss(ntwk, freq_range, test['th_limit'])
+                        else:
+                            self.logger.warning(f"Unknown test type: {test_name}")
+                            continue
+                        
+                        # Log the test result
+                        #self.log_test_result(filename, test_name, result, test['th_limit'])
+                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to process test {test_name} on file {filename}: {str(e)}")
+                        return False
+            
+            self.logger.info("All tests processed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in test_method_process: {str(e)}")
+            return False
+        
+
 if __name__ == "__main__":
-    validator = SParameterValidator('Test_struct.json', max_iterations=5)
+    validator = SParameterValidator('Test_struct.json','Test_TH.json',freq_rate = 26.5625e9, max_iterations=5)
     success = True
     success = validator.run_validation_flow()
     print(f"Validation completed with status: {'Success' if success else 'Failure'}")
+
+    # Specify the path to your log file and optionally the database file
+    log_file = "LDV_log.log"  # Replace with actual path
+    db_file = "cascade_analysis.db"       # Optional custom database name
+
+    # Run the database creation
+    build_cascade_database(log_file, db_file)
+    success = extract_cascade_files()
+    print(f"Cascade file extraction completed with status: {'Success' if success else 'Failure'}")
+    success = extract_and_sort_log_results()
+    print(f"Extraction and sorting completed with status: {'Success' if success else 'Failure'}")
+    success = create_worst_results_cascade()
+    print(f"Worst results extraction completed with status: {'Success' if success else 'Failure'}")
+    success = extract_worst_constellations()
+    print(f"Worst constellations extraction completed with status: {'Success' if success else 'Failure'}")
+    success = create_cascade_metrics_table_from_log()
+    print(f"Cascade metrics table creation completed with status: {'Success' if success else 'Failure'}")
+    analyze_and_plot_histograms(db_file, show_plots=False)
+    plot_test_type_histograms("InsertionLoss", db_file, show_plots=False)
+    plot_test_type_histograms("ReturnLoss", db_file, show_plots=False)
+    plot_test_type_histograms("D2C", db_file, show_plots=False)
+    plot_max_ild_histograms(db_file, show_plots=True)
+    print("Histogram analysis complete.")
