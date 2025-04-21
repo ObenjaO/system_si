@@ -219,6 +219,38 @@ def adjust_tdr_analyze(time, Z_t, Tstart, Tend):
     
     return Z_t_adj, slope, r_squared
 
+def s_param_to_Impedance(file):
+    S_ntwk = rf.Network(file)
+    Z0 = S_ntwk.z0[0, 0]
+    print(f"Processing file: {file} - Z0 = {Z0}")
+    S_ntwk = add_dc_frequency_if_missing(S_ntwk)
+    if S_ntwk.nports == 4:
+        factor = 2
+        ntwk_dict = mixed_mode_s_params(S_ntwk.s)
+        # Convert a specific parameter (e.g., sdd11) into an skrf.Network object
+        freqs = S_ntwk.f  # Extract frequency array
+        sdd11_ntwk = rf.Network(f=freqs, s=ntwk_dict['sdd11'][:, np.newaxis, np.newaxis])
+        sdd22_ntwk = rf.Network(f=freqs, s=ntwk_dict['sdd22'][:, np.newaxis, np.newaxis])
+        # Compute step response
+        time, s11_t = sdd11_ntwk.step_response(window='hamming')
+        time, s22_t = sdd22_ntwk.step_response(window='hamming')
+        
+    else:
+        factor = 1
+        ntwk = S_ntwk
+        time, s11_t = ntwk.s11.step_response(window='hamming')
+        time, s22_t = ntwk.s22.step_response(window='hamming')
+
+    Z11_t = factor * Z0 * (1 + s11_t) / (1 - s11_t)
+    Z22_t = factor * Z0 * (1 + s22_t) / (1 - s22_t)
+    return (time, Z11_t, Z22_t, Z0)
+
+def adjust_Z(Z_t, time):
+    valid_segments = analyze_tdr_segments(time, Z_t)
+    for Tstart, Tend, slope, r_squared in valid_segments:
+        Z_t = adjust_tdr(time, Z_t, Tstart, Tend, slope)
+    return Z_t
+
 def main(): 
     parser = argparse.ArgumentParser(description="Process an unknown number of file names.")
     parser.add_argument("files", nargs="+", help="List of file names to process")  # `nargs="+"` means at least one file
